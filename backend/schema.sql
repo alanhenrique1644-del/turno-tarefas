@@ -1,0 +1,17 @@
+CREATE DATABASE IF NOT EXISTS tarefas_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+USE tarefas_db;
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  title VARCHAR(150) NOT NULL,
+  description TEXT NULL,
+  completed BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  INDEX idx_tasks_completed (completed),
+  INDEX idx_tasks_created_at (created_at)
+);
