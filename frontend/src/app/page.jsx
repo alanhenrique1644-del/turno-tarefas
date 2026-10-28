@@ -2,32 +2,23 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Activity,
-  ArrowUpRight,
   Check,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
   CircleDashed,
-  Clock3,
-  Command,
-  FileText,
-  LayoutDashboard,
   ListTodo,
-  Layers3,
   MoonStar,
   Pencil,
   Plus,
   RefreshCw,
   Search,
-  Target,
   Trash2,
-  TrendingUp,
   X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -41,9 +32,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { createTask, deleteTask, getHealth, getTasks, updateTask } from '@/lib/api';
 
 const VIEWS = [
-  { id: 'overview', label: 'Visão geral', icon: LayoutDashboard },
-  { id: 'all', label: 'Todas as tarefas', icon: ListTodo },
-  { id: 'active', label: 'Em andamento', icon: CircleDashed },
+  { id: 'all', label: 'Todas', icon: ListTodo },
+  { id: 'active', label: 'Em aberto', icon: CircleDashed },
   { id: 'completed', label: 'Concluídas', icon: CheckCheck },
 ];
 
@@ -68,28 +58,13 @@ function formatShortDate(value) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(date).replace('.', '');
 }
 
-function formatLongDate(value) {
-  if (!value) return 'Data indisponível';
-  const normalized = typeof value === 'string' ? value.replace(' ', 'T') : value;
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return 'Data indisponível';
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(date).replace('.', '');
-}
-
-function MetricCard({ label, value, note, icon: Icon, accent = 'violet', trend }) {
-  const accentClass = accent === 'blue' ? 'text-sky-300' : accent === 'green' ? 'text-emerald-300' : accent === 'white' ? 'text-slate-200' : 'text-violet-300';
+function MetricCard({ label, value, note }) {
   return (
-    <Card className="metric-card">
-      <div className="flex items-start justify-between gap-3">
-        <p className="metric-label">{label}</p>
-        <span className="metric-icon"><Icon className="size-4" /></span>
-      </div>
+    <div className="metric-card">
+      <p className="metric-label">{label}</p>
       <div className="metric-value tabular-nums">{value}</div>
-      <div className="flex items-center gap-1.5 metric-note">
-        {trend ? <ArrowUpRight className={`size-3 ${accentClass}`} /> : <span className="status-dot bg-slate-600" />}
-        <span>{note}</span>
-      </div>
-    </Card>
+      {note ? <p className="metric-note">{note}</p> : null}
+    </div>
   );
 }
 
@@ -108,15 +83,13 @@ function TaskRow({ task, onToggle, onEdit, onDelete, busy }) {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className={`task-title ${task.completed ? 'completed' : ''}`}>{task.title}</span>
           {task.completed ? (
-            <Badge variant="success"><Check className="size-2.5" /> Concluída</Badge>
+            <Badge variant="success">Concluída</Badge>
           ) : (
-            <Badge variant="subtle"><span className="status-dot bg-violet-300" /> Em aberto</Badge>
+            <Badge variant="subtle">Em aberto</Badge>
           )}
         </div>
         {task.description ? <p className="task-description line-clamp-2">{task.description}</p> : null}
         <div className="task-meta">
-          <span className="font-mono tracking-wide">T-{String(task.id).padStart(4, '0')}</span>
-          <span className="status-dot bg-slate-700" />
           <span>{task.completed ? 'Atualizada' : 'Adicionada'} {formatShortDate(task.updated_at || task.created_at)}</span>
         </div>
       </div>
@@ -133,13 +106,12 @@ function TaskRow({ task, onToggle, onEdit, onDelete, busy }) {
 }
 
 export default function HomePage() {
-  const [view, setView] = useState('overview');
+  const [view, setView] = useState('all');
   const [dateLabel, setDateLabel] = useState('');
   const [greetingLabel, setGreetingLabel] = useState('');
   const [queryInput, setQueryInput] = useState('');
   const [search, setSearch] = useState('');
   const [tasks, setTasks] = useState([]);
-  const [queue, setQueue] = useState([]);
   const [stats, setStats] = useState({ total: 0, completed: 0, active: 0 });
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
@@ -154,6 +126,9 @@ export default function HomePage() {
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [quickTitle, setQuickTitle] = useState('');
+  const [quickCreating, setQuickCreating] = useState(false);
+  const [quickError, setQuickError] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -168,12 +143,11 @@ export default function HomePage() {
     setError('');
     try {
       const completedFilter = view === 'active' ? false : view === 'completed' ? true : undefined;
-      const [listResult, totalResult, completedResult, activeResult, queueResult] = await Promise.all([
+      const [listResult, totalResult, completedResult, activeResult] = await Promise.all([
         getTasks({ page, limit: 10, completed: completedFilter, search }),
         getTasks({ page: 1, limit: 1 }),
         getTasks({ page: 1, limit: 1, completed: true }),
         getTasks({ page: 1, limit: 1, completed: false }),
-        getTasks({ page: 1, limit: 5, completed: false }),
       ]);
       const totalPages = listResult.pagination.totalPages;
       if (page > Math.max(1, totalPages)) {
@@ -187,7 +161,6 @@ export default function HomePage() {
         completed: completedResult.pagination.total,
         active: activeResult.pagination.total,
       });
-      setQueue(queueResult.data);
       setApiState('online');
       getHealth().catch(() => setApiState('offline'));
     } catch (loadError) {
@@ -202,8 +175,7 @@ export default function HomePage() {
     loadData();
   }, [loadData]);
 
-  const progress = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
-  const filteredLabel = view === 'active' ? 'Tarefas em andamento' : view === 'completed' ? 'Tarefas concluídas' : 'O que está na mesa';
+  const filteredLabel = view === 'active' ? 'Em aberto' : view === 'completed' ? 'Concluídas' : 'Todas as tarefas';
   useEffect(() => {
     // Valores dependentes do relógio são calculados somente no navegador,
     // após a hidratação, para evitar erro de prerender do Next.js.
@@ -258,6 +230,29 @@ export default function HomePage() {
     }
   }
 
+  async function handleQuickCreate(event) {
+    event.preventDefault();
+    const cleanTitle = quickTitle.trim();
+    if (!cleanTitle) return;
+
+    setQuickCreating(true);
+    setQuickError('');
+    setError('');
+    setNotice('');
+    try {
+      await createTask({ title: cleanTitle, description: null });
+      setQuickTitle('');
+      setNotice('Tarefa criada.');
+      setView('all');
+      setPage(1);
+      await loadData();
+    } catch (createError) {
+      setQuickError(createError.message || 'Não foi possível criar a tarefa.');
+    } finally {
+      setQuickCreating(false);
+    }
+  }
+
   async function handleToggle(task, completed) {
     setBusyId(task.id);
     setNotice('');
@@ -289,64 +284,46 @@ export default function HomePage() {
   }
 
   const statsCards = [
-    { label: 'Tarefas no total', value: stats.total, note: 'Registros no seu espaço', icon: Layers3, accent: 'white' },
-    { label: 'Em andamento', value: stats.active, note: 'Ainda pedem sua atenção', icon: Activity, accent: 'blue' },
-    { label: 'Concluídas', value: stats.completed, note: 'Passos que já ficaram para trás', icon: CheckCheck, accent: 'green', trend: stats.completed > 0 },
-    { label: 'Ritmo de conclusão', value: `${progress}%`, note: 'Do total de tarefas registradas', icon: TrendingUp, accent: 'violet' },
-    { label: 'Visíveis nesta página', value: tasks.length, note: `Página ${page} de ${Math.max(1, pagination.totalPages)}`, icon: ListTodo, accent: 'blue' },
-    { label: 'Na fila rápida', value: queue.length, note: 'Tarefas abertas mais recentes', icon: Clock3, accent: 'white' },
+    { label: 'Total', value: stats.total, note: 'tarefas na lista' },
+    { label: 'Em aberto', value: stats.active, note: 'ainda por fazer' },
+    { label: 'Concluídas', value: stats.completed, note: 'já finalizadas' },
   ];
 
   return (
     <div className="app-shell">
-      <div className="noise-overlay" aria-hidden="true" />
       <aside className="sidebar" aria-label="Menu principal">
         <div className="brand-row flex items-center gap-3">
-          <div className="brand-mark"><Command className="size-[17px]" strokeWidth={1.8} /></div>
+          <div className="brand-mark" aria-hidden="true"><MoonStar className="brand-moon" strokeWidth={1.8} /></div>
           <div className="brand-word min-w-0">
-            <div className="text-[15px] font-semibold tracking-[-0.04em] text-slate-100">turno<span className="text-violet-300">.</span></div>
-            <div className="brand-caption">TASK MANAGER</div>
+            <div className="brand-name">turno<span>.</span></div>
+            <div className="brand-caption">Tarefas com calma</div>
           </div>
         </div>
 
-        <button type="button" className="sidebar-create" onClick={openCreateDialog} aria-label="Nova tarefa">
-          <Plus className="size-4" />
-          <span className="sidebar-create-label">Nova tarefa</span>
-          <span className="sidebar-shortcut" aria-hidden="true">+</span>
-        </button>
-
         <div className="sidebar-section">
-          <p className="nav-section-label">Organização</p>
-          <nav className="sidebar-nav" aria-label="Navegação principal">
-            {VIEWS.map(({ id, label, icon: Icon }) => {
-              const count = id === 'all' ? stats.total : id === 'active' ? stats.active : id === 'completed' ? stats.completed : null;
-              return (
-                <button key={id} title={label} onClick={() => { setView(id); setPage(1); }} className={`nav-item ${view === id ? 'active' : ''}`} aria-current={view === id ? 'page' : undefined}>
-                  <Icon className="nav-icon" strokeWidth={1.8} />
-                  <span className="nav-label">{label}</span>
-                  {count !== null && <span className="nav-count">{count}</span>}
-                </button>
-              );
-            })}
+          <p className="nav-section-label">Organize-se</p>
+          <nav className="sidebar-nav" aria-label="Filtrar tarefas">
+            {VIEWS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                title={label}
+                onClick={() => { setView(id); setPage(1); }}
+                className={`nav-item ${view === id ? 'active' : ''}`}
+                aria-current={view === id ? 'page' : undefined}
+              >
+                <Icon className="nav-icon" strokeWidth={1.8} />
+                <span className="nav-label">{label}</span>
+              </button>
+            ))}
           </nav>
         </div>
 
         <div className="sidebar-bottom">
-          <div className="sidebar-progress">
-            <div className="sidebar-progress-heading">
-              <span>Progresso geral</span>
-              <strong>{progress}%</strong>
-            </div>
-            <div className="sidebar-progress-track" role="progressbar" aria-label="Progresso geral" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-              <span style={{ width: `${progress}%` }} />
-            </div>
-            <p>{stats.completed} de {stats.total} tarefas concluídas</p>
-          </div>
           <div className="sidebar-connection">
             <span className={`status-dot ${apiState === 'online' ? 'bg-emerald-400' : apiState === 'offline' ? 'bg-rose-400' : 'bg-amber-300'}`} />
-            <span className="sidebar-connection-label">{apiState === 'online' ? 'API conectada' : apiState === 'offline' ? 'API desconectada' : 'Conectando à API'}</span>
-            <button type="button" className="sidebar-refresh" onClick={loadData} title="Atualizar dados" aria-label="Atualizar dados">
-              <RefreshCw className="size-3.5" />
+            <span className="sidebar-connection-label">{apiState === 'online' ? 'Conectado' : apiState === 'offline' ? 'Sem conexão' : 'Conectando'}</span>
+            <button type="button" className="sidebar-refresh" onClick={loadData} title="Atualizar tarefas" aria-label="Atualizar tarefas">
+              <RefreshCw className="size-4" />
             </button>
           </div>
         </div>
@@ -354,168 +331,120 @@ export default function HomePage() {
 
       <div className="main-area">
         <header className="topbar">
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-slate-600">
-            <span>Workspace</span><span className="text-slate-800">/</span><span className="text-slate-400">Pessoal</span>
-          </div>
+          <div className="topbar-context">Meu espaço</div>
           <div className="topbar-tools flex items-center gap-4">
             <label className="search-wrap">
-              <Search className="size-3.5 shrink-0 text-slate-500" />
-              <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Buscar uma tarefa..." aria-label="Buscar tarefas" />
-              {queryInput && <button onClick={() => { setQueryInput(''); setSearch(''); }} aria-label="Limpar busca" className="text-slate-500 hover:text-white"><X className="size-3.5" /></button>}
+              <Search className="size-4 shrink-0 text-slate-500" />
+              <input value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Buscar tarefa..." aria-label="Buscar tarefas" />
+              {queryInput && <button type="button" onClick={() => { setQueryInput(''); setSearch(''); }} aria-label="Limpar busca" className="text-slate-500 hover:text-white"><X className="size-4" /></button>}
             </label>
-            <div className="hidden sm:block h-7 w-px bg-white/[0.08]" />
-            <div className="flex items-center gap-2 text-[10px] text-slate-500">
-              <MoonStar className="size-4 text-indigo-300/80" />
-              <span className="hidden sm:inline">MODO NOTURNO</span>
-            </div>
           </div>
         </header>
 
         <main className="dashboard-content">
           <section className="hero-row mb-8 flex items-end justify-between gap-6">
-            <div>
-              <div className="mb-3 flex flex-wrap items-center gap-2.5">
-                <span className="eyebrow">{dateLabel}</span>
-                <span className="status-dot bg-slate-700" />
-                <span className="text-[10px] uppercase tracking-[0.13em] text-slate-600">Painel pessoal · 01</span>
-              </div>
-              <h1 className="hero-title">{greetingLabel} <span className="text-slate-500">Vamos fechar o dia.</span></h1>
-              <p className="hero-subtitle mt-3 max-w-[600px]">Um pouco de ordem no meio da correria. Veja o que ficou, escolha o próximo passo e siga no seu ritmo.</p>
+            <div className="hero-copy">
+              <div className="hero-date">{dateLabel}</div>
+              <h1 className="hero-title">{greetingLabel} <span>Vamos por partes.</span></h1>
+              <p className="hero-subtitle">Veja o que falta e escolha a próxima tarefa.</p>
             </div>
-            <Button onClick={openCreateDialog} className="shrink-0"><Plus className="size-4" /> Nova tarefa</Button>
+            <Button onClick={openCreateDialog} className="primary-task-button shrink-0"><Plus className="size-5" /> Nova tarefa</Button>
           </section>
 
-          <section className="metric-grid mb-7 grid grid-cols-4 gap-3" aria-label="Indicadores das tarefas">
+          <section className="metric-grid mb-7 grid grid-cols-3 gap-3" aria-label="Resumo das tarefas">
             {statsCards.map((metric) => <MetricCard key={metric.label} {...metric} />)}
           </section>
 
-          <div className="content-columns grid grid-cols-[minmax(0,1fr)_300px] items-start gap-4">
+          <div className="content-columns grid grid-cols-1 items-start gap-4">
             <section className="min-w-0">
-              <Card className="overflow-hidden">
-                <CardHeader className="gap-4 border-b border-border/70 pb-4">
+              <Card className="task-panel overflow-hidden">
+                <CardHeader className="task-panel-header gap-4 border-b border-border/70 pb-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2"><span className="status-dot bg-violet-300" /><CardTitle className="section-title">{filteredLabel}</CardTitle></div>
-                      <p className="section-kicker">Uma visão prática do que está acontecendo agora.</p>
+                      <CardTitle className="section-title">{filteredLabel}</CardTitle>
+                      <p className="section-kicker">O que você precisa fazer agora.</p>
                     </div>
-                    <Button variant="outline" size="sm" onClick={openCreateDialog}><Plus className="size-3.5" /> Adicionar</Button>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {[
-                        { id: 'overview', label: 'Tudo' },
-                        { id: 'active', label: 'Em aberto' },
-                        { id: 'completed', label: 'Concluídas' },
-                      ].map((item) => (
-                        <button key={item.id} onClick={() => { setView(item.id); setPage(1); }} className={`filter-button ${view === item.id || (item.id === 'overview' && view === 'all') ? 'active' : ''}`}>
-                          {item.label}
-                          {item.id === 'active' && <span className="text-[9px] opacity-60">{stats.active}</span>}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-600"><Clock3 className="size-3.5" /> Mais recentes primeiro</div>
+                  <div className="task-filters flex flex-wrap items-center gap-2">
+                    {[
+                      { id: 'all', label: 'Todas' },
+                      { id: 'active', label: 'Em aberto' },
+                      { id: 'completed', label: 'Concluídas' },
+                    ].map((item) => (
+                      <button key={item.id} onClick={() => { setView(item.id); setPage(1); }} className={`filter-button ${view === item.id ? 'active' : ''}`}>
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
                 </CardHeader>
 
                 {error && (
-                  <div className="mx-5 mt-5 flex items-start gap-3 border border-rose-300/15 bg-rose-400/[0.05] p-3.5">
-                    <span className="mt-1 status-dot bg-rose-300" />
-                    <div className="min-w-0 flex-1"><p className="text-xs font-medium text-rose-200">Não foi possível carregar o painel</p><p className="mt-1 text-[11px] leading-5 text-rose-200/65">{error}</p></div>
-                    <Button variant="outline" size="sm" onClick={loadData}><RefreshCw className="size-3" /> Tentar novamente</Button>
+                  <div className="load-error mx-5 mt-5 flex items-start gap-3 border border-rose-300/15 bg-rose-400/[0.05] p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-rose-200">Não foi possível carregar as tarefas.</p>
+                      <p className="mt-1 leading-5 text-rose-200/75">{error}</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={loadData}><RefreshCw className="size-4" /> Tentar novamente</Button>
                   </div>
                 )}
 
                 <div aria-live="polite">
                   {loading ? (
-                    <div className="space-y-0">
-                      {Array.from({ length: 4 }).map((_, index) => <div key={index} className="flex gap-3 border-b border-white/[0.045] px-5 py-[19px]"><div className="size-[18px] animate-pulse bg-white/[0.06]" /><div className="flex-1"><div className="h-3 w-1/2 animate-pulse bg-white/[0.06]" /><div className="mt-3 h-2 w-4/5 animate-pulse bg-white/[0.04]" /></div></div>)}
+                    <div className="task-loading-list">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <div key={index} className="task-loading-row" aria-hidden="true">
+                          <div className="task-loading-check animate-pulse" />
+                          <div className="min-w-0 flex-1">
+                            <div className="task-loading-title animate-pulse" />
+                            <div className="task-loading-description animate-pulse" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : tasks.length > 0 ? (
                     tasks.map((task) => <TaskRow key={task.id} task={task} onToggle={handleToggle} onEdit={openEditDialog} onDelete={handleDelete} busy={busyId === task.id} />)
                   ) : !error ? (
-                    <div className="empty-state">
-                      <span className="empty-icon"><FileText className="size-5" strokeWidth={1.5} /></span>
-                      <h3 className="mt-4 text-sm font-medium text-slate-200">{search ? 'Nenhum resultado por aqui' : view === 'completed' ? 'Nenhuma tarefa concluída ainda' : view === 'active' ? 'Fila limpa por enquanto' : 'Seu espaço começa aqui'}</h3>
-                      <p className="mx-auto mt-2 max-w-[310px] text-[11px] leading-6 text-slate-500">{search ? 'Tente buscar por outro termo ou limpe a pesquisa.' : 'Adicione uma tarefa para tirar a primeira coisa da cabeça e colocar no papel.'}</p>
-                      {search ? <Button variant="outline" size="sm" className="mt-4" onClick={() => { setQueryInput(''); setSearch(''); }}>Limpar pesquisa</Button> : <Button size="sm" className="mt-4" onClick={openCreateDialog}><Plus className="size-3.5" /> Criar primeira tarefa</Button>}
-                    </div>
+                    !search && stats.total === 0 && view === 'all' ? (
+                      <div className="empty-first-task">
+                        <MoonStar className="empty-moon" strokeWidth={1.7} aria-hidden="true" />
+                        <h3>Sua lista começa aqui.</h3>
+                        <p>Adicione a primeira tarefa. O resto pode esperar.</p>
+                        <form className="quick-create-form" onSubmit={handleQuickCreate}>
+                          <Input
+                            value={quickTitle}
+                            onChange={(event) => { setQuickTitle(event.target.value); setQuickError(''); }}
+                            maxLength={150}
+                            placeholder="O que precisa fazer?"
+                            aria-label="Título da primeira tarefa"
+                          />
+                          <Button type="submit" disabled={quickCreating || !quickTitle.trim()}>
+                            {quickCreating ? <><RefreshCw className="size-4 animate-spin" /> Salvando...</> : <><Plus className="size-4" /> Adicionar tarefa</>}
+                          </Button>
+                        </form>
+                        {quickError && <p role="alert" className="quick-create-error">{quickError}</p>}
+                      </div>
+                    ) : (
+                      <div className="empty-state">
+                        <h3>{search ? 'Nenhuma tarefa encontrada.' : view === 'completed' ? 'Ainda não há tarefas concluídas.' : 'Você não tem tarefas em aberto.'}</h3>
+                        <p>{search ? 'Tente outro termo ou limpe a busca.' : 'Quando houver algo para fazer, vai aparecer aqui.'}</p>
+                        {search && <Button variant="outline" size="sm" className="mt-4" onClick={() => { setQueryInput(''); setSearch(''); }}>Limpar busca</Button>}
+                      </div>
+                    )
                   ) : null}
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-5 py-3.5">
-                  <p className="text-[10px] text-slate-600">{pagination.total === 0 ? 'Nenhuma tarefa para mostrar' : `Mostrando ${Math.min((page - 1) * 10 + 1, pagination.total)}–${Math.min(page * 10, pagination.total)} de ${pagination.total} tarefas`}</p>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" className="size-7" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))} aria-label="Página anterior"><ChevronLeft className="size-3.5" /></Button>
-                    <span className="min-w-12 text-center font-mono text-[10px] text-slate-500">{String(Math.max(1, page)).padStart(2, '0')} <span className="text-slate-700">/</span> {String(Math.max(1, pagination.totalPages)).padStart(2, '0')}</span>
-                    <Button variant="outline" size="icon" className="size-7" disabled={page >= pagination.totalPages || loading} onClick={() => setPage((current) => current + 1)} aria-label="Próxima página"><ChevronRight className="size-3.5" /></Button>
+                {pagination.total > 0 && (
+                  <div className="task-pagination flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-5 py-4">
+                    <p>{`Mostrando ${Math.min((page - 1) * 10 + 1, pagination.total)}–${Math.min(page * 10, pagination.total)} de ${pagination.total}`}</p>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="icon" disabled={page <= 1 || loading} onClick={() => setPage((current) => Math.max(1, current - 1))} aria-label="Página anterior"><ChevronLeft className="size-4" /></Button>
+                      <span className="task-page-number">Página {Math.max(1, page)} de {Math.max(1, pagination.totalPages)}</span>
+                      <Button variant="outline" size="icon" disabled={page >= pagination.totalPages || loading} onClick={() => setPage((current) => current + 1)} aria-label="Próxima página"><ChevronRight className="size-4" /></Button>
+                    </div>
                   </div>
-                </div>
+                )}
               </Card>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] text-slate-700">
-                <span className="flex items-center gap-2"><span className="font-mono">TURN-01</span><span>·</span><span>Seu espaço, seu ritmo.</span></span>
-                <span>Os dados são salvos na sua API.</span>
-              </div>
             </section>
-
-            <aside className="right-rail min-w-0">
-              <Card className="overflow-hidden">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="section-title">Resumo das tarefas</CardTitle>
-                    <Target className="size-4 text-violet-300" />
-                  </div>
-                  <p className="section-kicker">Acompanhe o andamento sem abrir outra tela.</p>
-                </CardHeader>
-                <CardContent>
-                  <div className="summary-progress-top">
-                    <div>
-                      <p className="summary-progress-label">CONCLUÍDAS</p>
-                      <div className="summary-progress-value">{progress}<span>%</span></div>
-                    </div>
-                    <div className="summary-progress-count"><strong>{stats.completed}</strong><span>de {stats.total}</span></div>
-                  </div>
-                  <div className="summary-progress-track" role="progressbar" aria-label="Percentual de tarefas concluídas" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-                    <span style={{ width: `${progress}%` }} />
-                  </div>
-                  <div className="summary-status-list">
-                    <div className="summary-status-row">
-                      <span><i className="summary-status-mark open" />Em andamento</span>
-                      <strong>{stats.active}</strong>
-                    </div>
-                    <div className="summary-status-row">
-                      <span><i className="summary-status-mark done" />Concluídas</span>
-                      <strong>{stats.completed}</strong>
-                    </div>
-                  </div>
-                  <p className="summary-progress-caption">{stats.total === 0 ? 'Crie sua primeira tarefa para começar.' : stats.active === 0 ? 'Tudo em dia. Nenhuma tarefa em aberto.' : `${stats.active} ${stats.active === 1 ? 'tarefa aguarda' : 'tarefas aguardam'} sua atenção.`}</p>
-                </CardContent>
-              </Card>
-
-              <Card className="mt-4 overflow-hidden">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="section-title">Na fila</CardTitle>
-                    <Badge variant="outline">{queue.length} abertas</Badge>
-                  </div>
-                  <p className="section-kicker">Tarefas abertas adicionadas por último.</p>
-                </CardHeader>
-                <CardContent className="pb-4">
-                  {queue.length ? <div>{queue.slice(0, 5).map((task, index) => (
-                    <button key={task.id} className="mini-row w-full text-left" onClick={() => openEditDialog(task)} title={`Editar ${task.title}`}>
-                      <span className="flex min-w-0 items-start gap-2.5"><span className="pt-0.5 font-mono text-[9px] text-slate-700">0{index + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-slate-300">{task.title}</span><span className="mt-1 block text-[9px] text-slate-600">Criada em {formatShortDate(task.created_at)}</span></span></span>
-                      <Pencil className="size-3 shrink-0 text-slate-700" />
-                    </button>
-                  ))}</div> : <div className="py-5 text-center"><CheckCheck className="mx-auto size-5 text-emerald-300/70" /><p className="mt-2 text-[11px] text-slate-400">Nada pendente na fila.</p><p className="mt-1 text-[10px] text-slate-600">Bom momento para respirar.</p></div>}
-                </CardContent>
-              </Card>
-
-
-              <div className="flex items-center justify-between px-1 pt-3">
-                <span className="api-indicator"><span className={`status-dot ${apiState === 'online' ? 'bg-emerald-400 text-emerald-400' : apiState === 'offline' ? 'bg-rose-400 text-rose-400' : 'bg-amber-300 text-amber-300'}`} />{apiState === 'online' ? 'API conectada' : apiState === 'offline' ? 'API desconectada' : 'Conferindo API'}</span>
-                <button className="text-[10px] text-slate-600 transition hover:text-slate-300" onClick={loadData} title="Atualizar dados"><RefreshCw className="inline size-3" /></button>
-              </div>
-            </aside>
           </div>
         </main>
       </div>
@@ -523,18 +452,16 @@ export default function HomePage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <div className="mb-2 flex size-9 items-center justify-center border border-violet-300/20 bg-violet-300/[0.08] text-violet-200"><FileText className="size-4" /></div>
             <DialogTitle>{editingTask ? 'Editar tarefa' : 'Nova tarefa'}</DialogTitle>
-            <DialogDescription>{editingTask ? 'Ajuste os detalhes e mantenha seu espaço atualizado.' : 'Tire essa ideia da cabeça e coloque na sua lista.'}</DialogDescription>
+            <DialogDescription>{editingTask ? 'Atualize os detalhes da tarefa.' : 'Adicione o que precisa fazer.'}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSave} className="mt-2 space-y-4">
             <div className="space-y-2">
-              <label htmlFor="task-title" className="text-[11px] font-medium text-slate-300">Título <span className="text-violet-300">*</span></label>
+              <label htmlFor="task-title" className="dialog-label">Título <span className="text-violet-300">*</span></label>
               <Input id="task-title" autoFocus maxLength={150} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Ex.: finalizar a entrega do projeto" />
-              <p className="text-right text-[9px] text-slate-600">{title.length}/150</p>
             </div>
             <div className="space-y-2">
-              <label htmlFor="task-description" className="text-[11px] font-medium text-slate-300">Descrição <span className="text-slate-600">· opcional</span></label>
+              <label htmlFor="task-description" className="dialog-label">Descrição <span className="text-slate-500">(opcional)</span></label>
               <Textarea id="task-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Contexto, detalhes ou o próximo passo..." rows={4} />
             </div>
             {formError && <p role="alert" className="border border-rose-300/15 bg-rose-400/[0.06] px-3 py-2 text-[11px] text-rose-200">{formError}</p>}
